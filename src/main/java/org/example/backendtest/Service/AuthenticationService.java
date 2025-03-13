@@ -2,6 +2,7 @@ package org.example.backendtest.Service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.backendtest.Config.MpesaConfiguration;
+import org.example.backendtest.Config.OauthConfiguration;
 import org.example.backendtest.DTO.AuthenticationResponseDto;
 import org.example.backendtest.DTO.AuthenticationResponseDto;
 import okhttp3.OkHttpClient;
@@ -16,37 +17,43 @@ import java.io.IOException;
 public class AuthenticationService {
 
     private final ObjectMapper objectMapper;
-    private final MpesaConfiguration mpesaConfiguration;
-    public AuthenticationService(ObjectMapper objectMapper, MpesaConfiguration mpesaConfiguration){
+    private final OauthConfiguration oauthConfiguration;
+
+    public AuthenticationService(ObjectMapper objectMapper, OauthConfiguration oauthConfiguration) {
         this.objectMapper = objectMapper;
-        this.mpesaConfiguration = mpesaConfiguration;
+        this.oauthConfiguration = oauthConfiguration;
     }
 
-public AuthenticationResponseDto generateToken() {
+    public AuthenticationResponseDto generateToken() {
+        OkHttpClient client = new OkHttpClient().newBuilder().build();
 
-    OkHttpClient client = new OkHttpClient().newBuilder().build();
-    Request request = new Request.Builder()
-            .url(String.format("%s?grant_type=%s", mpesaConfiguration.getOauthEndpoint(), mpesaConfiguration.getGrantType()))
-            .method("GET", null)
-            .addHeader("Authorization", "Basic RHJmTE8yNjdMWXhrZkV0MlBZckd3OHJzZ0FMcVVHaWJpNnA4bXNFeE5RTzdLS3JkOjI0Mmk0WHVoR2tIb1JLUXJEaGRwRDZHVXpNR3Y2ZmlQamlxQ0xIQnNXdlk4Nk1laTZDcXFueUdyVE5COFdzSFE=")
-            .build();
-    try (Response response = client.newCall(request).execute()) {
-        if (response.isSuccessful()) {
-            String responseBody = response.body().string();
-            JsonNode jsonNode = objectMapper.readTree(responseBody);
-            String accessToken = jsonNode.get("access_token").asText();
-            String expiresIn = jsonNode.get("expires_in").asText();
+        // Generate the Basic Auth Header dynamically
+        String credentials = oauthConfiguration.getClientId() + ":" + oauthConfiguration.getClientSecret();
+        String encodedCredentials = Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+        String authorizationHeader = "Basic " + encodedCredentials;
 
-            AuthenticationResponseDto authenticationResponseDto = new AuthenticationResponseDto();
-            authenticationResponseDto.setAccessToken(accessToken);
-            authenticationResponseDto.setExpiresIn(expiresIn);
-            return authenticationResponseDto;
-        } else {
-            throw new RuntimeException("Failed to generate token: " + response.message());
+        Request request = new Request.Builder()
+                .url(String.format("%s?grant_type=%s", oauthConfiguration.getOauthEndpoint(), oauthConfiguration.getGrantType()))
+                .method("GET", null)
+                .addHeader("Authorization", authorizationHeader)
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            if (response.isSuccessful() && response.body() != null) {
+                String responseBody = response.body().string();
+                JsonNode jsonNode = objectMapper.readTree(responseBody);
+                String accessToken = jsonNode.get("access_token").asText();
+                String expiresIn = jsonNode.get("expires_in").asText();
+
+                AuthenticationResponseDto authenticationResponseDto = new AuthenticationResponseDto();
+                authenticationResponseDto.setAccessToken(accessToken);
+                authenticationResponseDto.setExpiresIn(expiresIn);
+                return authenticationResponseDto;
+            } else {
+                throw new RuntimeException("Failed to generate token: " + response.message());
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to generate token", e);
         }
-    } catch (IOException e) {
-        throw new RuntimeException("Failed to generate token", e);
     }
-
-}
 }
